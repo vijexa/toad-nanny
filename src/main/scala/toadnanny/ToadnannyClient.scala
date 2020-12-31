@@ -13,13 +13,23 @@ import toadnanny.Messages.Response._
 import cats.effect.Sync
 import org.http4s.Uri
 import java.net.URLEncoder
+import scala.annotation.tailrec
+import toadnanny.ToadStatus.CanFeed
+import toadnanny.ToadStatus.FeedableIn
+import toadnanny.ToadStatus.CanTakeFromJob
+import toadnanny.ToadStatus.TakeableFromJobIn
+import toadnanny.ToadStatus.CanSendToJob
+import toadnanny.ToadStatus.SendableToJobIn
+import cats.effect.Concurrent
 
 
 case class ToadnannyClient [F[_]] (
   client: Client[F], 
   arguments: Arguments
 ) (implicit
-  S : Sync[F]
+  S : Sync[F],
+  T : Timer[F],
+  C : Concurrent[F]
 ) {
 
   def generateUri (method: String, args: Map[String, String] = Map.empty): Uri =
@@ -48,14 +58,59 @@ case class ToadnannyClient [F[_]] (
 
   def sendMessage (message: String): F[Unit] =
     client.get(generateUri("messages.send", Map(("message" -> message))))(r => S.unit)
-  
-  def sendToadInfo: F[Unit] =
-    sendMessage("жаба инфо")
+
+  def getToadStatus: F[Option[Set[ToadStatus]]] = for {
+    _ <- sendMessage("жаба инфо")
+    _ <- T.sleep(1.second)
+    messageOpt <- getToadBotMessage
+  } yield for {
+    message <- messageOpt
+    status <- ToadnannyClient.parseToadStatus(message)
+  } yield status
+
+  private def returnMinTime (a: FiniteDuration, b: FiniteDuration): FiniteDuration =
+    if (a < b) a else b
+
+  private def sitWithToad: F[Unit] = for {
+    statusOpt <- getToadStatus
+    _ <- statusOpt match {
+      case Some(statusSet) => 
+        val (effect, time) = statusSet.foldLeft((S.unit, 12.hours)) { case ((effect, minTime), status) =>
+          status match {
+            case CanFeed => (
+              effect *> sendMessage("покормить жабу"), 
+              returnMinTime(12.hours, minTime)
+            )
+            case FeedableIn(time) => (effect, returnMinTime(time, minTime))
+
+            case CanTakeFromJob => (
+              effect *> sendMessage("завершить работу"),
+              returnMinTime(6.hours, minTime)
+            )
+            case TakeableFromJobIn(time) => (effect, returnMinTime(time, minTime))
+            case CanSendToJob => (
+              effect *> sendMessage("отправить жабу на работу"),
+              returnMinTime(2.hours, minTime)
+            )
+            case SendableToJobIn(time) => (effect, returnMinTime(time, minTime))
+          }
+        }
+
+        for {
+          _ <- effect
+          _ <- sendMessage(s"🤖статус был $statusSet, тепер буду ждатб $time")
+          _ <- T.sleep(time + 5.minutes)
+          _ <- sitWithToad
+        } yield ()
+        
+      case None => sendMessage("🤖бип-боп шота пашло нитак памогите 😥😥😥")
+    }
+  } yield ()
 }
 
 object ToadnannyClient {
 
-  def getToadStatus (message: DialogMessage): Option[Set[ToadStatus]] = {
+  def parseToadStatus (message: DialogMessage): Option[Set[ToadStatus]] = {
     import ToadStatus._
 
     val set: Set[ToadStatus] = message.body.split("\n").flatMap(_ match {
@@ -77,17 +132,16 @@ object ToadnannyClient {
     else None
   }
 
-  def run [F[_]: ConcurrentEffect] (arguments: Arguments) (implicit T: Timer[F], S: Sync[F]): F[ExitCode] = {
+  def run [F[_]: ConcurrentEffect] (
+    arguments: Arguments
+  ) (implicit 
+    T: Timer[F], 
+    S: Sync[F]
+  ): F[ExitCode] = {
     BlazeClientBuilder[F](global).resource.use { client =>
       val tnclient = ToadnannyClient(client, arguments)
       for {
-        _ <- tnclient.sendToadInfo
-        message <- tnclient.getToadBotMessage
-        status = message.flatMap(getToadStatus(_))
-        _ <- T.sleep(1.second)
-        _ <- tnclient.sendMessage(status.toString)
-        _ <- S.delay(println(tnclient.generateUri("messages.send", Map(("message" -> "жаба инфо")))))
-        _ <- S.delay(println(status))
+        status <- tnclient.sitWithToad
       } yield ExitCode.Success
     }
   }
