@@ -1,26 +1,18 @@
 package toadnanny
 
-import cats.effect.{ConcurrentEffect, Timer}
-import cats.implicits._
-import org.http4s.client.blaze.BlazeClientBuilder
+import java.net.URLEncoder
+
 import scala.concurrent.ExecutionContext.global
 import scala.concurrent.duration._
-import cats.effect.ExitCode
-import org.http4s.client.Client
-import org.http4s.circe._
 
-import toadnanny.Messages.Response._
-import cats.effect.Sync
+import cats.effect._
+import cats.implicits._
 import org.http4s.Uri
-import java.net.URLEncoder
-import scala.annotation.tailrec
-import toadnanny.ToadStatus.CanFeed
-import toadnanny.ToadStatus.FeedableIn
-import toadnanny.ToadStatus.CanTakeFromJob
-import toadnanny.ToadStatus.TakeableFromJobIn
-import toadnanny.ToadStatus.CanSendToJob
-import toadnanny.ToadStatus.SendableToJobIn
-import cats.effect.Concurrent
+import org.http4s.circe._
+import org.http4s.client.Client
+import org.http4s.client.blaze.BlazeClientBuilder
+import toadnanny.Messages.Response._
+import toadnanny.ToadStatus._
 
 
 case class ToadnannyClient [F[_]] (
@@ -111,8 +103,6 @@ case class ToadnannyClient [F[_]] (
 object ToadnannyClient {
 
   def parseToadStatus (message: DialogMessage): Option[Set[ToadStatus]] = {
-    import ToadStatus._
-
     val set: Set[ToadStatus] = message.body.split("\n").flatMap(_ match {
       case canFeedRegex() => CanFeed.some
       case feedableInRegex(hours, minutes) => 
