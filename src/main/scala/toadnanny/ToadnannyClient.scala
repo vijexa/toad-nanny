@@ -20,6 +20,7 @@ case class ToadnannyClient [F[_]] (
   S : Sync[F],
   T : Timer[F]
 ) {
+  import ToadnannyClient._
 
   private def generateUri (method: String, args: Map[String, String] = Map.empty): String =
     s"https://api.vk.com/method/$method?" +
@@ -65,7 +66,7 @@ case class ToadnannyClient [F[_]] (
       .sequence.map(_.flatten)
   } yield for {
     message <- messageEither
-    status <- ToadnannyClient.parseToadStatus(message)
+    status <- parseToadStatus(message)
   } yield status
 
   private def performEffectForToadStatus (statusSet: Set[ToadStatus]): (F[Unit], FiniteDuration) = 
@@ -89,9 +90,6 @@ case class ToadnannyClient [F[_]] (
         case SendableToJobIn(time) => (effect, returnMinTime(time, minTime))
       }
     }
-
-  private def returnMinTime (a: FiniteDuration, b: FiniteDuration): FiniteDuration =
-    if (a < b) a else b
 
   private def sitWithToad (retries: Int): F[Unit] = for {
     _ <- if (arguments.isDebug) sendMessage("🤖🤖🤖бип боп") else S.unit
@@ -122,7 +120,7 @@ case class ToadnannyClient [F[_]] (
             S.unit
           }
           _ <- T.sleep(waitTime)
-          _ <- sitWithToad(retries)
+          _ <- sitWithToad(retries + 1)
         } yield ()
 
     }
@@ -130,6 +128,9 @@ case class ToadnannyClient [F[_]] (
 }
 
 object ToadnannyClient {
+
+  def returnMinTime (a: FiniteDuration, b: FiniteDuration): FiniteDuration =
+    if (a < b) a else b
 
   def parseToadStatus (message: DialogMessage): Either[String, Set[ToadStatus]] = {
     val set: Set[ToadStatus] = message.body.split("\n").flatMap(_ match {
