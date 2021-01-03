@@ -17,7 +17,6 @@ object Main extends IOApp {
       groupId <- argumentMap.get("--groupId").flatMap(_.toLongOption)
         .toRight("specify --groupId argument")
       isDebug =  argumentMap.exists{ case (a, b) => a == "--debug" || b == "--debug" }
-      _ = println(isDebug)
     } yield Arguments(token, 2_000_000_000 + groupId, isDebug)
   }
 

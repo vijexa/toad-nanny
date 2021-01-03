@@ -18,8 +18,7 @@ case class ToadnannyClient [F[_]] (
   arguments: Arguments
 ) (implicit
   S : Sync[F],
-  T : Timer[F],
-  C : Concurrent[F]
+  T : Timer[F]
 ) {
 
   private def generateUri (method: String, args: Map[String, String] = Map.empty): String =
@@ -69,6 +68,28 @@ case class ToadnannyClient [F[_]] (
     status <- ToadnannyClient.parseToadStatus(message)
   } yield status
 
+  private def performEffectForToadStatus (statusSet: Set[ToadStatus]): (F[Unit], FiniteDuration) = 
+    statusSet.foldLeft((S.unit, 12.hours)) { case ((effect, minTime), status) =>
+      status match {
+        case CanFeed => (
+          effect *> sendMessage("покормить жабу") as (), 
+          returnMinTime(5.seconds, minTime)
+        )
+        case FeedableIn(time) => (effect, returnMinTime(time, minTime))
+
+        case CanTakeFromJob => (
+          effect *> sendMessage("завершить работу") as (),
+          returnMinTime(5.seconds, minTime)
+        )
+        case TakeableFromJobIn(time) => (effect, returnMinTime(time, minTime))
+        case CanSendToJob => (
+          effect *> sendMessage("отправить жабу на работу") as (),
+          returnMinTime(5.seconds, minTime)
+        )
+        case SendableToJobIn(time) => (effect, returnMinTime(time, minTime))
+      }
+    }
+
   private def returnMinTime (a: FiniteDuration, b: FiniteDuration): FiniteDuration =
     if (a < b) a else b
 
@@ -77,27 +98,7 @@ case class ToadnannyClient [F[_]] (
     statusEither <- getToadStatus
     _ <- statusEither match {
       case Right(statusSet) => 
-        val (effect, time) = statusSet.foldLeft((S.unit, 12.hours)) { case ((effect, minTime), status) =>
-          status match {
-            case CanFeed => (
-              effect *> sendMessage("покормить жабу") as (), 
-              returnMinTime(5.seconds, minTime)
-            )
-            case FeedableIn(time) => (effect, returnMinTime(time, minTime))
-
-            case CanTakeFromJob => (
-              effect *> sendMessage("завершить работу") as (),
-              returnMinTime(5.seconds, minTime)
-            )
-            case TakeableFromJobIn(time) => (effect, returnMinTime(time, minTime))
-            case CanSendToJob => (
-              effect *> sendMessage("отправить жабу на работу") as (),
-              returnMinTime(5.seconds, minTime)
-            )
-            case SendableToJobIn(time) => (effect, returnMinTime(time, minTime))
-          }
-        }
-
+        val (effect, time) = performEffectForToadStatus(statusSet)
         for {
           _ <- effect
           _ <- if (arguments.isDebug) {
@@ -150,11 +151,8 @@ object ToadnannyClient {
     else "не удается запарсить сообщение жабабота".asLeft
   }
 
-  def run [F[_]: ConcurrentEffect] (
+  def run [F[_] : ConcurrentEffect : Timer] (
     arguments: Arguments
-  ) (implicit 
-    T: Timer[F], 
-    S: Sync[F]
   ): F[ExitCode] = {
     BlazeClientBuilder[F](global).resource.use { client =>
       val tnclient = ToadnannyClient(client, arguments)
