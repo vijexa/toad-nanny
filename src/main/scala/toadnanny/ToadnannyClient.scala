@@ -44,7 +44,7 @@ case class ToadnannyClient [F[_]] (
   } yield for {
     messages <- messagesEither
     toadBotMessage <- messages.sliding(2).collectFirst {
-      case List(message @ DialogMessage(_, fromId, _), DialogMessage(id, _, body)) 
+      case List(message @ DialogMessage(_, fromId, _), DialogMessage(id, _, _)) 
         if id == messageId && fromId == toadBotId => message
     }.toRight("либо жабабот не ответил либо его перебили")
   } yield toadBotMessage
@@ -61,7 +61,7 @@ case class ToadnannyClient [F[_]] (
 
   private def getToadStatus: F[Either[String, Set[ToadStatus]]] = for {
     messageIdEither <- sendMessage("жаба инфо")
-    _ <- T.sleep(1.second)
+    _ <- T.sleep(10.seconds)
     messageEither <- messageIdEither.map(messageId => getToadBotMessage(messageId))
       .sequence.map(_.flatten)
   } yield for {
@@ -72,7 +72,7 @@ case class ToadnannyClient [F[_]] (
   private def returnMinTime (a: FiniteDuration, b: FiniteDuration): FiniteDuration =
     if (a < b) a else b
 
-  private def sitWithToad: F[Unit] = for {
+  private def sitWithToad (retries: Int): F[Unit] = for {
     _ <- if (arguments.isDebug) sendMessage("🤖🤖🤖бип боп") else S.unit
     statusEither <- getToadStatus
     _ <- statusEither match {
@@ -106,20 +106,23 @@ case class ToadnannyClient [F[_]] (
             S.unit
           }
           _ <- T.sleep(time)
-          _ <- sitWithToad
+          _ <- sitWithToad(0)
         } yield ()
         
-      case Left(error) => for {
-        _ <- if (arguments.isDebug) {
-          sendMessage(s"🤖 бип-боп что-то пошло не так 😥😥😥\n" +
-            s"ошибка: $error\n" +
-            s"попробую еще раз через минуту...")
-        } else {
-          S.unit
-        }
-        _ <- T.sleep(1.minute)
-        _ <- sitWithToad
-      } yield ()
+      case Left(error) => 
+        val waitTime = if (retries < 3) 5.minutes else 1.hour
+        for {
+          _ <- S.delay(println(s"error: $error"))
+          _ <- if (arguments.isDebug) {
+            sendMessage(s"🤖 бип-боп что-то пошло не так 😥😥😥\n" +
+              s"ошибка: $error\n" +
+              s"попробую еще раз через $waitTime...")
+          } else {
+            S.unit
+          }
+          _ <- T.sleep(waitTime)
+          _ <- sitWithToad(retries)
+        } yield ()
 
     }
   } yield ()
@@ -156,7 +159,7 @@ object ToadnannyClient {
     BlazeClientBuilder[F](global).resource.use { client =>
       val tnclient = ToadnannyClient(client, arguments)
       for {
-        status <- tnclient.sitWithToad
+        status <- tnclient.sitWithToad(0)
       } yield ExitCode.Success
     }
   }
