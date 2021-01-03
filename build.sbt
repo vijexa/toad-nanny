@@ -13,7 +13,7 @@ lazy val root = (project in file("."))
   .settings(
     organization := "io.github.vijexa",
     name := "toad-nanny",
-    version := "0.0.1-SNAPSHOT",
+    version := "1.0",
     scalaVersion := "2.13.4",
     scalacOptions += "-Wunused:imports",
     // so that case classes with private constructors
