@@ -20,7 +20,7 @@
 Запускается вот так:
 
 ```shell
-java -jar toad-nanny-assembly-1.0.jar --token *ваш API токен* --groupID *айди вашей беседы*
+java -jar toad-nanny-assembly-*version*.jar --token *ваш API токен* --groupID *айди вашей беседы*
 ```
 
 Токен должен иметь право доступа messages, а также желательно быть бессрочным (offline). К сожалению, ВК запретил выдавать токены с правом доступа к сообщениям новым приложениям, однако можно воспользоваться лазейкой и получить токен используя стороннее приложение. Например, [пройдя по этой ссылке](https://oauth.vk.com/authorize?client_id=2685278&display=page&redirect_uri=https://oauth.vk.com/blank.html&scope=messages,offline&response_type=token&v=5.52) вы сможете получить бессрочный токен от приложения Kate Mobile. После подтверждения авторизации токен появится в адресной строке.
