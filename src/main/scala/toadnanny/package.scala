@@ -1,6 +1,6 @@
 
 package object toadnanny {
-  case class Arguments (token: String, groupId: Long)
+  case class Arguments (token: String, groupId: Long, isDebug: Boolean)
 
   val toadBotId: Long = -191097210
 

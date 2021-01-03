@@ -64,7 +64,7 @@ case class ToadnannyClient [F[_]] (
     if (a < b) a else b
 
   private def sitWithToad: F[Unit] = for {
-    _ <- sendMessage("🤖🤖🤖бип боп")
+    _ <- if (arguments.isDebug) sendMessage("🤖🤖🤖бип боп") else S.unit
     statusEither <- getToadStatus
     _ <- statusEither match {
       case Right(statusSet) => 
@@ -91,15 +91,23 @@ case class ToadnannyClient [F[_]] (
 
         for {
           _ <- effect
-          _ <- sendMessage(s"🤖статус был $statusSet, теперь буду ждать $time")
+          _ <- if (arguments.isDebug) {
+            sendMessage(s"🤖статус был $statusSet, теперь буду ждать $time") 
+          } else {
+            S.unit
+          }
           _ <- T.sleep(time)
           _ <- sitWithToad
         } yield ()
         
       case Left(error) => for {
-        _ <- sendMessage(s"🤖 бип-боп что-то пошло не так 😥😥😥\n" +
-          s"ошибка: $error" +
-          s"\nпопробую еще раз через минуту...")
+        _ <- if (arguments.isDebug) {
+          sendMessage(s"🤖 бип-боп что-то пошло не так 😥😥😥\n" +
+            s"ошибка: $error" +
+            s"\nпопробую еще раз через минуту...")
+        } else {
+          S.unit
+        }
         _ <- T.sleep(1.minute)
         _ <- sitWithToad
       } yield ()
