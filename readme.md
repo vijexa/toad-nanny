@@ -1,5 +1,6 @@
 
-![Scala CI](https://github.com/vijexa/toad-nanny/workflows/Scala%20CI/badge.svg)
+![Scala CI](https://github.com/vijexa/toad-nanny/workflows/Scala%20CI/badge.svg) [![GitHub release](https://img.shields.io/github/release/vijexa/toad-nanny.svg)](https://GitHub.com/vijexa/toad-nanny/releases/)
+
 
 # Toad Nanny
 
@@ -19,7 +20,7 @@
 
 ## Как запустить
 
-Во вкладке releases репозитория найти последний .jar файл. Нужна установленная Java (скомпилено под 11 версию, но должно работать и на 8 т.к. CI использует 8 и проходит тесты)
+Во вкладке [releases](https://GitHub.com/vijexa/toad-nanny/releases/) репозитория найти последний .jar файл. Нужна установленная Java (скомпилено под 11 версию, но должно работать и на 8 т.к. CI использует 8 и проходит тесты)
 
 Запускается вот так:
 
