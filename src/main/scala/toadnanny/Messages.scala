@@ -14,6 +14,8 @@ object Messages {
   object Response {
     @ConfiguredJsonCodec case class GetHistory (response: GetHistoryResponse)
     @ConfiguredJsonCodec case class GetHistoryResponse (items: List[DialogMessage])
-    @ConfiguredJsonCodec case class DialogMessage (fromId: Long, body: String)
+    @ConfiguredJsonCodec case class DialogMessage (id: Long, fromId: Long, body: String)
+
+    @ConfiguredJsonCodec case class SendMessageResponse (response: Long)
   }
 }

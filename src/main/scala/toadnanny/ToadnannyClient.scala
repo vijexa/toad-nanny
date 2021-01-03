@@ -7,13 +7,11 @@ import scala.concurrent.duration._
 
 import cats.effect._
 import cats.implicits._
-import org.http4s.Uri
-import org.http4s.circe._
+import io.circe.parser.decode
 import org.http4s.client.Client
 import org.http4s.client.blaze.BlazeClientBuilder
 import toadnanny.Messages.Response._
 import toadnanny.ToadStatus._
-
 
 case class ToadnannyClient [F[_]] (
   client: Client[F], 
@@ -24,37 +22,48 @@ case class ToadnannyClient [F[_]] (
   C : Concurrent[F]
 ) {
 
-  def generateUri (method: String, args: Map[String, String] = Map.empty): Uri =
-    Uri.unsafeFromString(
-      s"https://api.vk.com/method/$method?" +
-        s"v=5.52&" +
-        s"access_token=${arguments.token}&" +
-        s"peer_id=${arguments.groupId}&" +
-        args.map{ case (name, value) => 
-          s"$name=${URLEncoder.encode(value)}"
-        }.mkString("&")
+  private def generateUri (method: String, args: Map[String, String] = Map.empty): String =
+    s"https://api.vk.com/method/$method?" +
+      s"v=5.52&" +
+      s"access_token=${arguments.token}&" +
+      s"peer_id=${arguments.groupId}&" +
+      args.map{ case (name, value) => 
+        s"$name=${URLEncoder.encode(value)}"
+      }.mkString("&")
+
+  private def getMessages: F[Either[String, List[DialogMessage]]] =
+    client.get(generateUri("messages.getHistory"))(r =>
+      r.bodyText.compile.toList.map(body =>
+        decode[GetHistory](body.mkString).map(_.response.items)
+          .leftMap(err => s"неожиданный респонс при попытке получить сообщения: $err")
+      )
     )
 
-  def getMessages: F[List[DialogMessage]] = {
-    implicit val getHistoryEntityDecoder = jsonOf[F, GetHistory]
-    client.expect[GetHistory](generateUri("messages.getHistory"))
-      .map(_.response.items)
-  }
+  private def getToadBotMessage (messageId: Long): F[Either[String, DialogMessage]] = for {
+    messagesEither <- getMessages
+  } yield for {
+    messages <- messagesEither
+    toadBotMessage <- messages.sliding(2).collectFirst {
+      case List(message @ DialogMessage(_, fromId, _), DialogMessage(id, _, body)) 
+        if id == messageId && fromId == toadBotId => message
+    }.toRight("либо жабабот не ответил либо его перебили")
+  } yield toadBotMessage
 
-  def getToadBotMessage: F[Either[String, DialogMessage]] = getMessages.map(
-    _.head match {
-      case m @ DialogMessage(id, _) if id == toadBotId => m.asRight
-      case _ => "либо жабабот не ответил либо его перебили".asLeft
-    }
-  )
+  private def sendMessage (message: String): F[Either[String, Long]] =
+    client.get(
+      generateUri("messages.send", Map(("message" -> message)))
+    )(r => 
+      r.bodyText.compile.toList.map(body =>
+        decode[SendMessageResponse](body.mkString).map(_.response)
+          .leftMap(err => s"неожиданный респонс при попытке отправить сообщение: $err")
+      )
+    )
 
-  def sendMessage (message: String): F[Unit] =
-    client.get(generateUri("messages.send", Map(("message" -> message))))(r => S.unit)
-
-  def getToadStatus: F[Either[String, Set[ToadStatus]]] = for {
-    _ <- sendMessage("жаба инфо")
+  private def getToadStatus: F[Either[String, Set[ToadStatus]]] = for {
+    messageIdEither <- sendMessage("жаба инфо")
     _ <- T.sleep(1.second)
-    messageEither <- getToadBotMessage
+    messageEither <- messageIdEither.map(messageId => getToadBotMessage(messageId))
+      .sequence.map(_.flatten)
   } yield for {
     message <- messageEither
     status <- ToadnannyClient.parseToadStatus(message)
@@ -71,18 +80,18 @@ case class ToadnannyClient [F[_]] (
         val (effect, time) = statusSet.foldLeft((S.unit, 12.hours)) { case ((effect, minTime), status) =>
           status match {
             case CanFeed => (
-              effect *> sendMessage("покормить жабу"), 
+              effect *> sendMessage("покормить жабу") as (), 
               returnMinTime(5.seconds, minTime)
             )
             case FeedableIn(time) => (effect, returnMinTime(time, minTime))
 
             case CanTakeFromJob => (
-              effect *> sendMessage("завершить работу"),
+              effect *> sendMessage("завершить работу") as (),
               returnMinTime(5.seconds, minTime)
             )
             case TakeableFromJobIn(time) => (effect, returnMinTime(time, minTime))
             case CanSendToJob => (
-              effect *> sendMessage("отправить жабу на работу"),
+              effect *> sendMessage("отправить жабу на работу") as (),
               returnMinTime(5.seconds, minTime)
             )
             case SendableToJobIn(time) => (effect, returnMinTime(time, minTime))
@@ -103,8 +112,8 @@ case class ToadnannyClient [F[_]] (
       case Left(error) => for {
         _ <- if (arguments.isDebug) {
           sendMessage(s"🤖 бип-боп что-то пошло не так 😥😥😥\n" +
-            s"ошибка: $error" +
-            s"\nпопробую еще раз через минуту...")
+            s"ошибка: $error\n" +
+            s"попробую еще раз через минуту...")
         } else {
           S.unit
         }
