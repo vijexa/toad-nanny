@@ -41,22 +41,22 @@ case class ToadnannyClient [F[_]] (
       .map(_.response.items)
   }
 
-  def getToadBotMessage: F[Option[DialogMessage]] = getMessages.map(
+  def getToadBotMessage: F[Either[String, DialogMessage]] = getMessages.map(
     _.head match {
-      case m @ DialogMessage(id, _) if id == toadBotId => m.some
-      case _ => None
+      case m @ DialogMessage(id, _) if id == toadBotId => m.asRight
+      case _ => "либо жабабот не ответил либо его перебили".asLeft
     }
   )
 
   def sendMessage (message: String): F[Unit] =
     client.get(generateUri("messages.send", Map(("message" -> message))))(r => S.unit)
 
-  def getToadStatus: F[Option[Set[ToadStatus]]] = for {
+  def getToadStatus: F[Either[String, Set[ToadStatus]]] = for {
     _ <- sendMessage("жаба инфо")
     _ <- T.sleep(1.second)
-    messageOpt <- getToadBotMessage
+    messageEither <- getToadBotMessage
   } yield for {
-    message <- messageOpt
+    message <- messageEither
     status <- ToadnannyClient.parseToadStatus(message)
   } yield status
 
@@ -64,25 +64,26 @@ case class ToadnannyClient [F[_]] (
     if (a < b) a else b
 
   private def sitWithToad: F[Unit] = for {
-    statusOpt <- getToadStatus
-    _ <- statusOpt match {
-      case Some(statusSet) => 
+    _ <- sendMessage("🤖🤖🤖бип боп")
+    statusEither <- getToadStatus
+    _ <- statusEither match {
+      case Right(statusSet) => 
         val (effect, time) = statusSet.foldLeft((S.unit, 12.hours)) { case ((effect, minTime), status) =>
           status match {
             case CanFeed => (
               effect *> sendMessage("покормить жабу"), 
-              returnMinTime(12.hours, minTime)
+              returnMinTime(5.seconds, minTime)
             )
             case FeedableIn(time) => (effect, returnMinTime(time, minTime))
 
             case CanTakeFromJob => (
               effect *> sendMessage("завершить работу"),
-              returnMinTime(6.hours, minTime)
+              returnMinTime(5.seconds, minTime)
             )
             case TakeableFromJobIn(time) => (effect, returnMinTime(time, minTime))
             case CanSendToJob => (
               effect *> sendMessage("отправить жабу на работу"),
-              returnMinTime(2.hours, minTime)
+              returnMinTime(5.seconds, minTime)
             )
             case SendableToJobIn(time) => (effect, returnMinTime(time, minTime))
           }
@@ -90,19 +91,26 @@ case class ToadnannyClient [F[_]] (
 
         for {
           _ <- effect
-          _ <- sendMessage(s"🤖статус был $statusSet, тепер буду ждатб $time")
-          _ <- T.sleep(time + 5.minutes)
+          _ <- sendMessage(s"🤖статус был $statusSet, теперь буду ждать $time")
+          _ <- T.sleep(time)
           _ <- sitWithToad
         } yield ()
         
-      case None => sendMessage("🤖бип-боп шота пашло нитак памогите 😥😥😥")
+      case Left(error) => for {
+        _ <- sendMessage(s"🤖 бип-боп что-то пошло не так 😥😥😥\n" +
+          s"ошибка: $error" +
+          s"\nпопробую еще раз через минуту...")
+        _ <- T.sleep(1.minute)
+        _ <- sitWithToad
+      } yield ()
+
     }
   } yield ()
 }
 
 object ToadnannyClient {
 
-  def parseToadStatus (message: DialogMessage): Option[Set[ToadStatus]] = {
+  def parseToadStatus (message: DialogMessage): Either[String, Set[ToadStatus]] = {
     val set: Set[ToadStatus] = message.body.split("\n").flatMap(_ match {
       case canFeedRegex() => CanFeed.some
       case feedableInRegex(hours, minutes) => 
@@ -118,8 +126,8 @@ object ToadnannyClient {
       case _ => None
     }).toSet
 
-    if (set.size > 0) set.some
-    else None
+    if (set.size > 0) set.asRight
+    else "не удается запарсить сообщение жабабота".asLeft
   }
 
   def run [F[_]: ConcurrentEffect] (
