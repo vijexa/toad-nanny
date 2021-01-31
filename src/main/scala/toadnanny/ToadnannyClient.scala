@@ -76,18 +76,45 @@ case class ToadnannyClient [F[_]] (
           effect *> sendMessage("покормить жабу") as (), 
           returnMinTime(5.seconds, minTime)
         )
+
         case FeedableIn(time) => (effect, returnMinTime(time, minTime))
+
 
         case CanTakeFromJob => (
           effect *> sendMessage("завершить работу") as (),
           returnMinTime(5.seconds, minTime)
         )
+
         case TakeableFromJobIn(time) => (effect, returnMinTime(time, minTime))
-        case CanSendToJob => (
-          effect *> sendMessage("отправить жабу на работу") as (),
+
+        case CanSendToJob => 
+          val isInDungeon = (statusSet contains CanTakeFromDungeon) || 
+            statusSet.exists { 
+              case TakeableFromDungeonIn(_) => true 
+              case _ => false
+            }
+
+          if (isInDungeon) (
+            effect,
+            minTime
+          ) else ( 
+            effect *> sendMessage("отправить жабу на работу") as (),
+            returnMinTime(5.seconds, minTime)
+          )
+
+        case SendableToJobIn(time) => (effect, returnMinTime(time, minTime))
+
+
+        case CanTakeFromDungeon => (
+          effect *> sendMessage("выйти из подземелья") as (),
           returnMinTime(5.seconds, minTime)
         )
-        case SendableToJobIn(time) => (effect, returnMinTime(time, minTime))
+
+        case TakeableFromDungeonIn(time) => (effect, returnMinTime(time, minTime))
+
+        case CanSendToDungeon => (effect, minTime)
+
+        case SendableToDungeonIn(time) => (effect, minTime)
       }
     }
 
@@ -144,6 +171,13 @@ object ToadnannyClient {
       case canTakeFromJobRegex() => CanTakeFromJob.some
       case takeableFromJobInRegex(hours, minutes) =>
         TakeableFromJobIn(hours.toInt.hours + minutes.toInt.minutes).some
+
+      case takeableFromDungeonInRegex(minutes) => 
+        TakeableFromDungeonIn(minutes.toInt.minutes).some
+      case canTakeFromDungeonRegex() => CanTakeFromDungeon.some
+      case canSendToDungeonRegex() => CanSendToDungeon.some
+      case sendableToDungeonInRegex(hours, minutes) => 
+        SendableToDungeonIn(hours.toInt.hours + minutes.toInt.minutes).some
 
       case _ => None
     }).toSet

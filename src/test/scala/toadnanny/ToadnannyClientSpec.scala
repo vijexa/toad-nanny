@@ -21,10 +21,15 @@ class ToadnannyClientSpec extends AnyFlatSpec {
            |(Откормить через 1ч:23м)
            |🏃‍♂:Отправить на работу можно будет через 5ч:24м
            |⚔:Не участвует в дуэли
+           |☠:В подземелье можно через 2ч. 16м.
            |💃:Можно пойти на тусу
            |💘:Жаба не в браке""".stripMargin
       )
-    ) shouldBe Set(SendableToJobIn(5.hours + 24.minutes), FeedableIn(9.hours + 23.minutes)).asRight
+    ) shouldBe Set(
+      SendableToJobIn(5.hours + 24.minutes), 
+      FeedableIn(9.hours + 23.minutes),
+      SendableToDungeonIn(136.minutes)
+    ).asRight
 
     parseToadStatus(
       DialogMessage(
@@ -34,10 +39,15 @@ class ToadnannyClientSpec extends AnyFlatSpec {
            |(Откормить через 1ч:23м)
            |🏃‍♂:Отправить на работу можно будет через 0ч:0м
            |⚔:Не участвует в дуэли
+           |☠:Можно отправиться в подземелье
            |💃:Можно пойти на тусу
            |💘:Жаба не в браке""".stripMargin
       )
-    ) shouldBe Set(SendableToJobIn(0.minutes), FeedableIn(0.minutes)).asRight
+    ) shouldBe Set(
+      SendableToJobIn(0.minutes), 
+      FeedableIn(0.minutes),
+      CanSendToDungeon
+    ).asRight
 
     parseToadStatus(
       DialogMessage(
@@ -47,10 +57,15 @@ class ToadnannyClientSpec extends AnyFlatSpec {
            |(Можно откормить)
            |🏃‍♂:Жабу можно отправить на работу
            |⚔:Не участвует в дуэли
+           |☠:Можно выйти из подземелья
            |💃:Можно пойти на тусу
            |💘:Жаба не в браке""".stripMargin
       )
-    ) shouldBe Set(CanFeed, CanSendToJob).asRight
+    ) shouldBe Set(
+      CanFeed, 
+      CanSendToJob,
+      CanTakeFromDungeon
+    ).asRight
 
     parseToadStatus(
       DialogMessage(
@@ -60,10 +75,15 @@ class ToadnannyClientSpec extends AnyFlatSpec {
            |(Откормить через 3ч:60м)
            |🏃‍♂:Забрать жабу можно через 1ч:60м
            |⚔:Не участвует в дуэли
+           |☠:Выйти из подземелья можно через 42мин.
            |💃:Можно пойти на тусу
            |💘:Жаба не в браке""".stripMargin
       )
-    ) shouldBe Set(FeedableIn(720.minutes), TakeableFromJobIn(120.minutes)).asRight
+    ) shouldBe Set(
+      FeedableIn(720.minutes), 
+      TakeableFromJobIn(120.minutes),
+      TakeableFromDungeonIn(42.minutes)
+    ).asRight
 
     parseToadStatus(
       DialogMessage(
